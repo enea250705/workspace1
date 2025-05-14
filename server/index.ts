@@ -1,19 +1,20 @@
-import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes.js";
 import { setupVite, serveStatic, log } from "./vite.js";
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
 // CORS middleware per consentire richieste dal frontend
-app.use((req: Request, res: Response, next: NextFunction) => {
+app.use((req, res, next) => {
   // In produzione, consenti richieste solo dal dominio Vercel
   const allowedOrigins = process.env.NODE_ENV === 'production' 
     ? [process.env.FRONTEND_URL || 'https://your-vercel-app.vercel.app'] 
     : ['http://localhost:3000', 'http://localhost:5000'];
-  
+    
   const origin = req.headers.origin;
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
@@ -32,62 +33,51 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    log(`${req.method} ${req.originalUrl} ${res.statusCode} ${ms}ms`);
   });
-
   next();
 });
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Servi i file statici dalla directory dist/public
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Gestisci tutte le altre richieste inviando index.html
+app.get('*', (req, res, next) => {
+  // Ignora le richieste API
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 (async () => {
-  const server = await registerRoutes(app);
-
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(status).json({ message });
-    throw err;
-  });
-
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (app.get("env") === "development") {
-    await setupVite(app, server);
+  // Configura il middleware di Vite in modalità di sviluppo
+  if (process.env.NODE_ENV !== 'production') {
+    await setupVite(app);
   } else {
-    serveStatic(app);
+    app.use(serveStatic());
   }
 
-  // Usa la porta fornita dall'ambiente (Render) o la porta 5000 come fallback
-  const port = process.env.PORT || 5000;
-  const host = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
-  
-  server.listen({
-    port,
-    host,
+  // Registra le routes dell'API
+  registerRoutes(app);
+
+  // Gestisci gli errori
+  app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    console.error(err.stack);
+    res.status(500).send('Something broke!');
+  });
+
+  // Configura il server HTTP
+  const server = app.listen({
+    port: 5000,
+    host: "0.0.0.0",
+    reusePort: true,
   }, () => {
-    log(`serving on http://${host}:${port}`);
+    log(`serving on port 5000`);
   });
 })();
