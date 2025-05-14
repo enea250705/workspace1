@@ -5,10 +5,11 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsx server/index.ts",
-    "build:client": "cd client && npm install && npm run build",
-    "build:server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "postbuild:client": "mkdir -p dist/public && cp -r client/dist/* dist/public/",
-    "build": "npm run build:client && npm run build:server && npm run postbuild:client",
+    "install-client": "cd client && npm install",
+    "build-client-only": "cd client && npm run build",
+    "build-server": "esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "copy-client": "mkdir -p dist/public && cp -r client/dist/* dist/public/",
+    "build": "npm run install-client && npm run build-client-only && npm run build-server && npm run copy-client",
     "start": "node dist/index.js",
     "check": "tsc",
     "db:push": "drizzle-kit push"

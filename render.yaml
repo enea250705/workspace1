@@ -4,7 +4,12 @@ services:
     env: node
     region: frankfurt
     plan: free
-    buildCommand: npm ci && npm run build
+    buildCommand: |
+      npm install
+      cd client && npm install && npm run build && cd ..
+      esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist
+      mkdir -p dist/public
+      cp -r client/dist/* dist/public/
     startCommand: npm run start
     staticPublishPath: ./dist/public
     routes:
